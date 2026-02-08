@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hi Motor Man - Roadside Mechanic Finder</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f8f9fa; }
+        #map { height: 400px; width: 100%; border-radius: 8px; }
+        .mechanic-card { margin-bottom: 15px; }
+        .emergency { background-color: #ffcccc; border: 2px solid red; }
+        .rating { color: gold; }
+        .safety-note { background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center">Hi Motor Man</h1>
+        <p class="text-center">Stuck on the road? Find and contact nearby mechanics instantly. Pull over safely before using!</p>
+        
+        <div class="safety-note">
+            <strong>Safety First:</strong> If your vehicle is in the middle of the road, move to a safe spot before accessing this site.
+        </div>
+        
+        <button id="getLocation" class="btn btn-primary btn-block mb-3">Find My Location & Nearby Mechanics</button>
+        
+        <div class="form-group">
+            <label for="serviceFilter">Filter by Service:</label>
+            <select id="serviceFilter" class="form-control">
+                <option value="">All Services</option>
+                <option value="Towing">Towing</option>
+                <option value="Repairs">Repairs</option>
+                <option value="Emergency">Emergency</option>
+            </select>
+        </div>
+        
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="emergencyMode">
+            <label class="form-check-label" for="emergencyMode">Show 24/7 Emergency Services Only</label>
+        </div>
+        
+        <div id="map" class="mt-3"></div>
+        
+        <h3 class="mt-4">Nearby Mechanics</h3>
+        <div id="mechanicsList" class="row"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Sample mechanic data (edit this to add real mechanics)
+        let mechanics = [
+            { name: "Quick Fix Auto", phone: "123-456-7890", email: "fix@quickfix.com", lat: 40.7128, lng: -74.0060, services: "Towing, Repairs", rating: 4.5, emergency: false },
+            { name: "Roadside Heroes", phone: "987-654-3210", email: "help@heroes.com", lat: 40.7589, lng: -73.9851, services: "Emergency Towing", rating: 4.8, emergency: true },
+            { name: "Midnight Mechanics", phone: "555-123-4567", email: "midnight@mech.com", lat: 40.7505, lng: -73.9934, services: "Repairs, Battery Jump", rating: 4.2, emergency: true },
+            { name: "City Tow Pros", phone: "444-987-6543", email: "tow@citypros.com", lat: 40.7282, lng: -73.7949, services: "Towing", rating: 4.7, emergency: false }
+        ];
+
+        let map;
+        let userMarker;
+        let mechanicMarkers = [];
+
+        // Initialize map (centered on a default location)
+        map = L.map('map').setView([40.7128, -74.0060], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        document.getElementById('getLocation').addEventListener('click', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(showPosition, showError);
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        });
+
+        function showPosition(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            
+            // Center map on user location
+            map.setView([lat, lng], 13);
+            
+            // Add user marker
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([lat, lng]).addTo(map).bindPopup("You are here!").openPopup();
+            
+            displayMechanics(lat, lng);
+        }
+
+        function showError(error) {
+            alert("Error getting location: " + error.message);
+        }
+
+        function displayMechanics(userLat, userLng) {
+            // Clear previous markers
+            mechanicMarkers.forEach(marker => map.removeLayer(marker));
+            mechanicMarkers = [];
+            
+            const list = document.getElementById('mechanicsList');
+            list.innerHTML = '';
+            
+            const filter = document.getElementById('serviceFilter').value;
+            const emergencyOnly = document.getElementById('emergencyMode').checked;
+            
+            mechanics.forEach(mechanic => {
+                if (emergencyOnly && !mechanic.emergency) return;
+                if (filter && !mechanic.services.includes(filter)) return;
+                
+                const distance = calculateDistance(userLat, userLng, mechanic.lat, mechanic.lng);
+                
+                // Add marker to map
+                const marker = L.marker([mechanic.lat, mechanic.lng]).addTo(map)
+                    .bindPopup(`${mechanic.name}<br>Services: ${mechanic.services}<br>Distance: ${distance.toFixed(2)} km`);
+                mechanicMarkers.push(marker);
+                
+                // Add to list
+                const cardClass = mechanic.emergency ? 'emergency' : '';
+                const stars = '★'.repeat(Math.floor(mechanic.rating)) + '☆'.repeat(5 - Math.floor(mechanic.rating));
+                const card = `
+                    <div class="col-md-6 mechanic-card">
+                        <div class="card ${cardClass}">
+                            <div class="card-body">
+                                <h5 class="card-title">${mechanic.name}</h5>
+                                <p class="card-text">Services: ${mechanic.services}<br>Rating: <span class="rating">${stars}</span> (${mechanic.rating}/5)<br>Distance: ${distance.toFixed(2)} km</p>
+                                <a href="tel:${mechanic.phone}" class="btn btn-success">Call</a>
+                                <a href="mailto:${mechanic.email}" class="btn btn-info">Email</a>
+                                <button class="btn btn-secondary" onclick="alert('Chat feature: Message sent to ${mechanic.name}!')">Message</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                list.innerHTML += card;
+            });
+        }
+
+        // Event listeners for filters
+        document.getElementById('serviceFilter').addEventListener('change', () => {
+            if (userMarker) displayMechanics(userMarker.getLatLng().lat, userMarker.getLatLng().lng);
+        });
+        document.getElementById('emergencyMode').addEventListener('change', () => {
+            if (userMarker) displayMechanics(userMarker.getLatLng().lat, userMarker.getLatLng().lng);
+        });
+
+        // Simple distance calculation (Haversine formula)
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371; // Radius of Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+    </script>
+</body>
+</html>
